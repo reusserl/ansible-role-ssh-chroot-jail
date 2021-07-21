@@ -3,29 +3,61 @@
   user:
     name: "{{ item.name }}"
     password: "{{ item.password | default(omit) }}"
-    groups: "{{ item.groups | default(omit) }}"
+    groups: "{{ item.groups | default(ssh_chroot_jail_group_name) }}"
     append: true
     shell: "{{ item.shell | default(omit) }}"
     home: "{{ item.home | default(omit) }}"
     createhome: "{{ item.createhome | default(omit) }}"
   register: user_task
+  with_items: "{{ ssh_chroot_jail_users }}"
 
 - name: Ensure jailed user has a homedir inside the jail (if configured).
   file:
-    path: "{{ ssh_chroot_jail_path }}{{ item.home }}"
+    path: "{{ item[0].path }}{{ item[1].home }}"
     state: directory
-    owner: "{{ item.name }}"
-    group: "{{ item.name }}"
-    mode: 0755
-  when: item.home is defined
+    owner: "{{ item[1].name }}"
+    group: "{{ item[1].name }}"
+    mode: 0750
+  when: item[1].home is defined and item[0].name == item[1].name
+  with_nested:
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_jail_users }}"
 
-- name: Ensure account skeleton files are copied into jailed user's home.
-  command: "cp -r -n /etc/skel/. {{ ssh_chroot_jail_path }}{{ item.home }}"
-  args:
-    warn: false
-  become: true
-  become_user: "{{ item.name }}"
-  failed_when: false
-  when:
-    - item.home is defined
-    - user_task.changed
+## ssh_chrootusers structure
+# ssh_chroot_jail_users:
+#   - name: "ncbackup1"
+#     home: "/data/backup/nextcloud1"
+#     shell: /bin/bash
+#   - name: "ncbackup2"
+#     home: "/data/backup/nextcloud2"
+#     shell: /bin/bash
+
+## ssh_chroot_jails structure:
+#   - name: ncbackup1
+#     path: "{{ ssh_chroot_jail_base_path }}/ncbackup1"
+#   - name: ncbackup2
+#     path: "{{ ssh_chroot_jail_base_path }}/ncbackup2"
+
+# https://docs.ansible.com/ansible/latest/collections/ansible/posix/mount_module.html
+- name: Mount real path inside chroot
+  ansible.posix.mount:
+    path: "{{ item[0].path }}{{ item[1].home }}"
+    src: "{{ item[1].home }}"
+    opts: bind
+    state: mounted
+    fstype: none
+  with_nested:
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_jail_users }}"
+  when: item[0].name == item[1].name
+
+# - name: Ensure account skeleton files are copied into jailed user's home.
+#   command: "cp -r -n /etc/skel/. {{ ssh_chroot_jail_path }}{{ item.home }}"
+#   args:
+#     warn: false
+#   #become: true
+#   #become_user: "{{ item.name }}"
+#   failed_when: false
+#   when:
+#     - item.home is defined
+#     - user_task.changed

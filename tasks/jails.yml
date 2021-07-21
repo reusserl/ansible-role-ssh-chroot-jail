@@ -1,0 +1,83 @@
+---
+- name: Ensure jail directories exist.
+  file:  # noqa 208
+    path: "{{ item[0].path }}/{{ item[1] }}"
+    state: directory
+    recurse: "{{ ssh_chroot_jail_dirs_recurse }}"
+  with_nested: 
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_jail_dirs }}"
+
+- name: Ensure jail devices exist.
+  command: mknod -m 0666 {{ item[0].path }}/dev/{{ item[1].dev }} {{ item[1].type | default('c') }} {{ item[1].major }} {{ item[1].minor }}
+  args:
+    creates: "{{ item[0].path }}/dev/{{ item[1].dev }}"
+  with_nested: 
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_jail_devs }}"
+
+- name: Ensure jail devices get created after reboot
+  template:
+    src: ssh-chroot.conf.j2
+    dest: "{{ ssh_chroot_tmpfiles_conf_path + '/ssh-chroot_' + item.name + '.conf' }}"
+  when: "ansible_service_mgr == 'systemd'"
+  #with_items: "{{ ssh_chroot_jails }}"
+  loop: "{{ ssh_chroot_jails|flatten(levels=1) }}"
+
+- name: Ensure l2chroot is installed.
+  template:
+    src: "{{ ssh_chroot_l2chroot_template }}"
+    dest: "{{ ssh_chroot_l2chroot_path }}_{{ item.name }}"
+    mode: 0755
+  with_items: "{{ ssh_chroot_jails }}"
+
+- name: Ensure binaries are copied into the jail.
+  copy:
+    src: "{{ item[1].bin | default(item[1]) }}"
+    dest: "{{ item[0].path }}{{ item[1].bin | default(item[1]) }}"
+    remote_src: true
+    mode: "{{ item[1].mode | default('0755') }}"
+  with_nested: 
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_bins }}"
+  register: binaries
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: copy ssh-chroot-jail extra items
+  copy:  # noqa 208
+    src: "{{ item[1] }}"
+    dest: "{{ item[0].path }}{{ item[1] }}"
+    remote_src: true
+  with_nested: 
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_copy_extra_items }}"
+  when: binaries is changed
+
+- name: add binary libs via l2chroot
+  command: "{{ ssh_chroot_l2chroot_path }}_{{ item[0].name}} {{ item[1].bin | default(item[1]) }}"
+  #when: binaries is changed and ( item[1].l2chroot is not defined or item[1].l2chroot )
+  with_nested: 
+    - "{{ ssh_chroot_jails }}"
+    - "{{ ssh_chroot_bins }}"
+
+- name: copy extra libraries for whoami
+  ansible.builtin.shell: "cp {{ lib64_path }}/libns* {{ item.path }}/{{ lib64_path }}/"
+  args:
+    warn: false
+  with_items: "{{ ssh_chroot_jails }}"
+  when: "'/usr/bin/whoami' in ssh_chroot_bins and binaries is changed"
+
+- name: Ensure an ssh jail group exists.
+  group:
+    name: "{{ ssh_chroot_jail_group_name }}"
+    state: present
+
+- name: Ensure SSHD config contains jail configuration.
+  template:
+    src: sshd_config_jail.j2
+    dest: /etc/ssh/sshd_config.d/{{ item.name }}_jail.conf
+    owner: root
+    group: root
+    mode: 0640
+  notify: restart ssh daemon
+  with_items: "{{ ssh_chroot_jails }}"

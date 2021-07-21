@@ -12,9 +12,19 @@ Requires OpenSSH server. Doesn't require `geerlingguy.security`, but that role (
 
 Available variables are listed below, along with default values (see `defaults/main.yml`):
 
-    ssh_chroot_jail_path: /var/jail
+    ssh_chroot_jail_enabled: false
 
-The path to the root of the chroot jail.
+This module is disabled by default. Enable it per host or group base.
+
+    ssh_chroot_jail_base_path: /var/jails
+
+The path to the root of the chroot jails.
+
+    ssh_chroot_jails
+      - name: ncbackup1
+        path: "{{ ssh_chroot_jail_base_path }}/ncbackup1"
+
+List of chroot jails (name and path) to create.
 
     ssh_chroot_jail_group_name: ssh_jailed
 
