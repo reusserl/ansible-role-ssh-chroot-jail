@@ -1,0 +1,11 @@
+[Unit]
+Description=Mounts mountpoints in /etc/fstab with option noauto
+Wants=zfs-mount.service
+After=zfs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mount_data_into_chroots.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -43,7 +43,7 @@
   ansible.posix.mount:
     path: "{{ item[0].path }}{{ item[1].home }}"
     src: "{{ item[1].home }}"
-    opts: bind
+    opts: bind,noauto,nofail
     state: mounted
     fstype: none
   with_nested:
@@ -61,3 +61,27 @@
 #   when:
 #     - item.home is defined
 #     - user_task.changed
+
+- name: Create /usr/local/sbin/mount_data_into_chroots.sh
+  copy:
+    src: mount_data_into_chroots.sh
+    dest: /usr/local/sbin/mount_data_into_chroots.sh
+    owner: root
+    group: root
+    mode: 0750
+
+- name: Create /etc/systemd/system/mount_noauto.service
+  copy:
+    src: mount_noauto.service
+    dest: /etc/systemd/system/mount_noauto.service
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Enable and start service mount_noauto
+  ansible.builtin.systemd:
+    state: started
+    enabled: yes
+    daemon_reload: yes
+    name: mount_noauto.service
+  ignore_errors: "{{ ansible_check_mode }}"
